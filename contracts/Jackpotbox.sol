@@ -15,7 +15,7 @@ contract Jackpotbox {
 
     uint public prizePool = 1000; // prize pool
     uint public prizePoolOffset = 5; // prize pool offset
-    uint public jackpot = 100; // jackpot
+    uint public jackpot = 0; // jackpot
     uint public counter = 0; // counter
     uint public minChancePrizepool = 1000; // min chance prize pool
     uint public minChanceJackpot = 10000; // min chance jackpot
@@ -34,8 +34,14 @@ contract Jackpotbox {
     }
 
     // admin only add jackpot
-    function adminAddJackpot(uint amount) public onlyAdmin {
-        jackpot += amount;
+    function adminAddJackpot() public payable onlyAdmin {
+        jackpot += msg.value;
+    }
+
+    // enter jackpot
+    function enterJackpot() public payable {
+        require(msg.value == entryPrice, "Invalid entry price");
+        prizePool += msg.value;
     }
 
     // get jackpot
