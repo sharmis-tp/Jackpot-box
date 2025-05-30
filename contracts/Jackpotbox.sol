@@ -92,4 +92,14 @@ contract Jackpotbox {
     function getJackpot() public view returns (uint) {
         return jackpot;
     }
+
+    // get counter
+    function getCounter() public view returns (uint) {
+        return counter;
+    }
+
+    // set spiliter
+    function setSpiliter(address newSpiliter) public onlyAdmin {
+        spiliter = newSpiliter;
+    }
 }
