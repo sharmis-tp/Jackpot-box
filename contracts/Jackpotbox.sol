@@ -32,7 +32,7 @@ contract Jackpotbox {
     uint public minChancePrizepool = 10; // min chance prize pool
     uint public minChanceJackpot = 100; // min chance jackpot
     uint public fee = 10; // fee
-    uint public entryPrice = 10; // entry price
+    uint public entryPrice = 1; // entry price
 
     mapping(bytes32 => address) private s_rollers;
     mapping(address => uint256) private s_results;
@@ -52,6 +52,7 @@ contract Jackpotbox {
     constructor() {
         admin = msg.sender; // set admin to the contract deployer address
         spiliter = msg.sender; // set spiliter to the contract deployer address
+        oracle = msg.sender; // set oracle to the contract deployer address
     }
 
     // admin only add jackpot
@@ -76,11 +77,8 @@ contract Jackpotbox {
         emit DiceRolled(requestId, msg.sender);
     }
 
-    // fulfillRandomWords function
-    function fulfillRandomWords(
-        bytes32 requestId,
-        uint256 rand
-    ) public onlyOracle {
+    // fulfillRandom function
+    function fulfillRandom(bytes32 requestId, uint256 rand) public onlyOracle {
         // emitting event to signal that dice landed
         emit DiceLanded(requestId, rand);
 
