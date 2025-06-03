@@ -5,14 +5,18 @@ pragma solidity ^0.8.24;
 import "hardhat/console.sol";
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import {IEntropyConsumer} from "@pythnetwork/entropy-sdk-solidity/IEntropyConsumer.sol";
+import {IEntropy} from "@pythnetwork/entropy-sdk-solidity/IEntropy.sol";
 
 /**
  * @title Jackpotbox
  * @notice A simple jackpot box contract
  */
-contract Jackpotbox {
+contract Jackpotbox is IEntropyConsumer {
     // variables
     uint256 private constant ROLL_IN_PROGRESS = 42;
+
+    IEntropy entropy;
 
     // events
     event DiceRolled(bytes32 indexed requestId, address indexed roller);
@@ -33,9 +37,11 @@ contract Jackpotbox {
     uint public minChanceJackpot = 100; // min chance jackpot
     uint public fee = 10; // fee
     uint public entryPrice = 1; // entry price
+    bytes32 public userRandomNumber1;
 
     mapping(bytes32 => address) private s_rollers;
     mapping(address => uint256) private s_results;
+    mapping(uint64 => bytes32) private requestIdBySequence;
 
     // admin modifier
     modifier onlyAdmin() {
@@ -49,10 +55,58 @@ contract Jackpotbox {
     }
 
     // constructor
-    constructor() {
+    constructor(address entropyAddress) {
         admin = msg.sender; // set admin to the contract deployer address
         spiliter = msg.sender; // set spiliter to the contract deployer address
         oracle = msg.sender; // set oracle to the contract deployer address
+
+        entropy = IEntropy(entropyAddress);
+    }
+
+    function entropyCallback(
+        uint64 sequenceNumber,
+        address provider,
+        bytes32 randomNumber
+    ) internal override {
+        // Implement your callback logic here.
+        bytes32 requestId = requestIdBySequence[sequenceNumber];
+        address player = s_rollers[requestId];
+
+        require(player != address(0), "Invalid callback");
+
+        uint256 rand = uint256(randomNumber);
+        emit DiceLanded(requestId, rand);
+
+        // Prizepool logic
+        uint256 prizeChanceDenominator = minChancePrizepool *
+            (100 / prizePoolOffset);
+        bool wonPrize = (rand % prizeChanceDenominator == 0);
+
+        // Jackpot logic
+        bool wonJackpot = (rand % (minChanceJackpot + counter) == 0);
+
+        // if prize pool win, transfer prize pool to winner and reduce counter
+        if (wonPrize) {
+            jackpot -= prizePool;
+            payable(player).transfer(prizePool);
+            counter = counter - (prizePool / entryPrice);
+            emit PrizePoolWon(player, prizePool);
+        }
+
+        // if jackpot win, transfer jackpot to winner and spiliter and reduce counter
+        if (wonJackpot) {
+            payable(player).transfer((jackpot * 4) / 10);
+            payable(spiliter).transfer(jackpot / 10);
+            counter = (counter * 4) / 10;
+            emit JackpotWon(player, jackpot);
+        }
+
+        // increment counter
+        counter++;
+
+        s_results[player] = 0;
+
+        emit EnteredJackpot(player, entryPrice);
     }
 
     // admin only add jackpot
@@ -68,10 +122,30 @@ contract Jackpotbox {
 
         jackpot += entryPrice;
 
-        bytes32 requestId = keccak256(
+        bytes32 userSeed = keccak256(
             abi.encodePacked(block.number, msg.sender, address(this))
         );
 
+        // Get the default provider and the fee for the request
+        address entropyProvider = entropy.getDefaultProvider();
+        uint256 fee1 = entropy.getFee(entropyProvider);
+
+        require(
+            address(this).balance >= fee1,
+            "Insufficient funds for entropy fee"
+        );
+
+        // Request the random number with the callback
+        uint64 sequenceNumber = entropy.requestWithCallback{value: fee1}(
+            entropyProvider,
+            userSeed
+        );
+        bytes32 requestId = keccak256(
+            abi.encodePacked(sequenceNumber, msg.sender)
+        );
+        // Store the sequence number to identify the callback request
+
+        requestIdBySequence[sequenceNumber] = requestId;
         s_rollers[requestId] = msg.sender;
         s_results[msg.sender] = ROLL_IN_PROGRESS;
         emit DiceRolled(requestId, msg.sender);
@@ -132,5 +206,11 @@ contract Jackpotbox {
     // set oracle
     function setOracle(address newOracle) public onlyAdmin {
         oracle = newOracle;
+    }
+
+    // This method is required by the IEntropyConsumer interface.
+    // It returns the address of the entropy contract which will call the callback.
+    function getEntropy() internal view override returns (address) {
+        return address(entropy);
     }
 }
